@@ -1,0 +1,129 @@
+---
+title: "Practical Machine Learning Assignment"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list=ls())
+```
+
+### Coursera Data Science Specialization
+### Practical Machining Learning Module
+### Project Assignment
+
+#### 1. Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+#### 2. Data
+The training data for this project are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: 
+http://groupware.les.inf.puc-rio.br/har
+
+#### 3. Load required packages for analysis
+```{r load packages}
+library(caret)
+library(rpart)
+library(ggplot2)
+library(corrplot)
+library(randomForest)
+library(rattle)
+set.seed(12345)
+```
+
+#### 4. Load data
+```{r load data}
+training_raw <- read.csv("pml-training.csv")[,-1]
+testing <- read.csv("pml-testing.csv")[,-1]
+# check dimension of the training and test dataset
+dim(training_raw)
+dim(testing)
+```
+
+#### 5. Clean data
+```{r cleaning data}
+# remove predictors that have many missing/NA values or non-unique values
+NZV <- nearZeroVar(training_raw)
+training <- training_raw[, -NZV]
+testing <- testing[, -NZV]
+
+# remove cases that have many missing/NA values
+NaValues <- sapply(training, function(x) mean(is.na(x))) > 0.9
+training <- training[, NaValues == "FALSE"]
+testing <- testing[, NaValues == "FALSE"]
+
+# remove id and time variables
+training <- training[,-c(1:5)]
+testing <- testing[,-c(1:5)]
+
+# check dimension of the cleaned up dataset
+dim(training)
+dim(testing)
+
+# take a look at the training dataset
+head(training)
+```
+
+#### 6. Prepare data partition, for later validation
+```{r prepare cross validation dataset}
+inTrain <- createDataPartition(y= training$classe, p = 0.7, list = FALSE)
+training <- training[inTrain, ]
+crossvalidation <- training[-inTrain, ]
+```
+
+#### 7. Now we can train our models given the preprocess with PCA
+```{r Train models}
+# decision trees
+model_tree <- train(classe~., data = training, method = "rpart")
+# print result of model prediction on original training and crossvalidation dataset
+predict_training_tree <- predict(model_tree, training)
+confusionmatrix_training_tree <- confusionMatrix(predict_training_tree, training$classe)
+
+predict_crossvalidation_tree <- predict(model_tree, crossvalidation)
+confusionmatrix_cv_tree <- confusionMatrix(predict_crossvalidation_tree, crossvalidation$classe)
+
+print(confusionmatrix_cv_tree)
+
+# random forest
+model_rf <- train(classe~., data = training, method = "rf")
+# print result of model prediction on original training and crossvalidation dataset
+predict_training_rf <- predict(model_rf, training)
+confusionmatrix_training_rf <- confusionMatrix(predict_training_rf, training$classe)
+
+predict_crossvalidation_rf <- predict(model_rf, crossvalidation)
+confusionmatrix_cv_rf <- confusionMatrix(predict_crossvalidation_rf, crossvalidation$classe)
+
+print(confusionmatrix_cv_rf)
+```
+
+#### 8. Conclusion
+The confusionmatrix showed that the accuracy of the random forest models is better than the decision tree model. 
+Therefore, we used this model to predict on the testing dataset. 
+
+#### 9. Predict on testing dataset
+```{r predict on testing dataset}
+predict_testing <- predict(model_rf, testing)
+predict_testing
+```
+
+#### 10. Appendix
+``` {r Principal component analysis}
+# explore the remianing predictors
+# check the factor variables
+predictor_factor <- which(sapply(training, class) == "factor")
+# explore correlation between predictors
+predictor_cor <- abs(cor(training[,-predictor_factor]))
+# turn lower tri to 0
+predictor_cor[lower.tri(predictor_cor, diag = TRUE)] <- 0
+# visualize result
+corrplot(predictor_cor, method  = "color", type = "upper", cl.lim = c(0,1), tl.col = rgb(0, 0, 0))
+# find highly correlated predictors
+which(predictor_cor > 0.8, arr.ind = TRUE)
+# Therefore, there are highly correlated predictors, principal component analysis is necessary.
+```
